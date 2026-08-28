@@ -1,0 +1,8 @@
+Makefile
+Makefile.Debug
+Makefile.Release
+.qmake.stash
+release/
+debug/
+*.o
+*.obj
