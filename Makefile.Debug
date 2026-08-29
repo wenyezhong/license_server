@@ -143,7 +143,7 @@ $(LIBS)
 <<
 
 qmake: FORCE
-	@$(QMAKE) -o Makefile.Debug license_server.pro
+	@$(QMAKE) -o Makefile.Debug license_server.pro "CONFIG+=release"
 
 qmake_all: FORCE
 
