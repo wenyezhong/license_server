@@ -155,7 +155,7 @@ bool LicenseDb::upsert(const QJsonObject& rec)
     } else {
         w.prepare(QStringLiteral(
             "INSERT INTO licenses (machine_code, license_key, expiry, customer, features, status, activated_count, created_at) "
-            "VALUES (?,?,?,?,?,?,1,?)"));
+            "VALUES (?,?,?,?,?,?,0,?)"));
         w.addBindValue(machine);
     }
     w.addBindValue(rec.value(QStringLiteral("license_key")).toString());
