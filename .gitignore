@@ -6,3 +6,5 @@ release/
 debug/
 *.o
 *.obj
+release/LicenseServer.exe
+release/LicenseDb.obj
