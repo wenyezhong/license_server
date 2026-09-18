@@ -21,6 +21,9 @@
  *   customer     TEXT
  *   features     TEXT
  *   status       TEXT/VARCHAR (active/disabled)
+ *   product      TEXT  卖的是什么（签发时由 license_tool 上报）
+ *   last_app     TEXT  最近一次是哪个客户端来激活的（AIQDVision/TrainStudio/QDVision）
+ *   last_version TEXT  该客户端的版本号
  *   activated_count INTEGER
  *   created_at   TEXT
  *
@@ -71,8 +74,10 @@ public:
     /// 入参: {"machine_code","token","expiry","customer","features"}
     bool upsertTrial(const QJsonObject& rec);
 
-    /// 激活计数 +1（/activate 每次调用时递增）
-    bool incrementActivated(const QString& machineCode);
+    /// 激活计数 +1，并记下本次是哪个客户端来激活的（/activate 每次调用时）
+    bool incrementActivated(const QString& machineCode,
+                            const QString& app = QString(),
+                            const QString& version = QString());
 
 private:
     bool createTableIfNotExists();

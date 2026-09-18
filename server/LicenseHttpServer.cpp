@@ -148,10 +148,13 @@ QByteArray LicenseHttpServer::handleRequest(const QByteArray& method, const QStr
                 r.insert(QStringLiteral("message"), QStringLiteral("该授权已被禁用"));
                 return QJsonDocument(r).toJson(QJsonDocument::Compact);
             }
-            // 每次激活计数 +1
-            g_db->incrementActivated(machine);
-            emit log(QStringLiteral("激活: %1, 已授权机器数: %2")
-                     .arg(machine, QString::number(g_db->count())));
+            // 每次激活计数 +1，顺带记下是哪个客户端报上来的
+            const QString app = obj.value(QStringLiteral("app")).toString();
+            const QString version = obj.value(QStringLiteral("version")).toString();
+            g_db->incrementActivated(machine, app, version);
+            emit log(QStringLiteral("激活: %1 [%2 %3], 已授权机器数: %4")
+                     .arg(machine, app.isEmpty() ? QStringLiteral("?") : app,
+                          version, QString::number(g_db->count())));
             QJsonObject r;
             r.insert(QStringLiteral("ok"), true);
             r.insert(QStringLiteral("license_key"), rec.value(QStringLiteral("license_key")).toString());

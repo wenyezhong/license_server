@@ -43,6 +43,9 @@ bool LicenseDb::createTableIfNotExists()
         " expiry       VARCHAR(32),"
         " customer     TEXT,"
         " features     TEXT,"
+        " product      VARCHAR(64),"
+        " last_app     VARCHAR(64),"
+        " last_version VARCHAR(32),"
         " status       VARCHAR(16) DEFAULT 'active',"
         " activated_count INTEGER DEFAULT 0,"
         " created_at   VARCHAR(32)"
@@ -63,6 +66,16 @@ bool LicenseDb::createTableIfNotExists()
     if (!q.exec(trialSql)) {
         qWarning() << "建 trials 表失败:" << q.lastError().text();
         return false;
+    }
+
+    // 老库迁移：CREATE TABLE IF NOT EXISTS 对已存在的表不生效，product 列得单独补。
+    // 已经有这一列时 ALTER 会失败，那是预期内的 —— 跨库没有统一的
+    // "ADD COLUMN IF NOT EXISTS" 写法，靠「失败就当已存在」比先查 schema 简单可靠。
+    for (const QString& col : { QStringLiteral("product VARCHAR(64)"),
+                                QStringLiteral("last_app VARCHAR(64)"),
+                                QStringLiteral("last_version VARCHAR(32)") }) {
+        if (!q.exec(QStringLiteral("ALTER TABLE licenses ADD COLUMN ") + col))
+            qDebug() << "列已存在或无需迁移:" << col << q.lastError().text();
     }
     return true;
 }
@@ -91,6 +104,9 @@ bool LicenseDb::createTableIfNotExists()
         " expiry       TEXT,"
         " customer     TEXT,"
         " features     TEXT,"
+        " product      TEXT,"
+        " last_app     TEXT,"
+        " last_version TEXT,"
         " status       TEXT DEFAULT 'active',"
         " activated_count INTEGER DEFAULT 0,"
         " created_at   TEXT)");
@@ -110,6 +126,16 @@ bool LicenseDb::createTableIfNotExists()
         qWarning() << "建 trials 表失败:" << q.lastError().text();
         return false;
     }
+
+    // 老库迁移：CREATE TABLE IF NOT EXISTS 对已存在的表不生效，product 列得单独补。
+    // 已经有这一列时 ALTER 会失败，那是预期内的 —— 跨库没有统一的
+    // "ADD COLUMN IF NOT EXISTS" 写法，靠「失败就当已存在」比先查 schema 简单可靠。
+    for (const QString& col : { QStringLiteral("product TEXT"),
+                                QStringLiteral("last_app TEXT"),
+                                QStringLiteral("last_version TEXT") }) {
+        if (!q.exec(QStringLiteral("ALTER TABLE licenses ADD COLUMN ") + col))
+            qDebug() << "列已存在或无需迁移:" << col << q.lastError().text();
+    }
     return true;
 }
 
@@ -118,7 +144,8 @@ bool LicenseDb::createTableIfNotExists()
 bool LicenseDb::find(const QString& machineCode, QJsonObject* out) const
 {
     QSqlQuery q(QSqlDatabase::database(QStringLiteral("licDb")));
-    q.prepare(QStringLiteral("SELECT machine_code, license_key, expiry, customer, features, status, activated_count, created_at "
+    q.prepare(QStringLiteral("SELECT machine_code, license_key, expiry, customer, features, product, "
+                             "last_app, last_version, status, activated_count, created_at "
                              "FROM licenses WHERE machine_code = ?"));
     q.addBindValue(machineCode);
     if (!q.exec() || !q.next())
@@ -130,9 +157,12 @@ bool LicenseDb::find(const QString& machineCode, QJsonObject* out) const
     o.insert(QStringLiteral("expiry"), q.value(2).toString());
     o.insert(QStringLiteral("customer"), q.value(3).toString());
     o.insert(QStringLiteral("features"), q.value(4).toString());
-    o.insert(QStringLiteral("status"), q.value(5).toString());
-    o.insert(QStringLiteral("activated_count"), q.value(6).toInt());
-    o.insert(QStringLiteral("created_at"), q.value(7).toString());
+    o.insert(QStringLiteral("product"), q.value(5).toString());
+    o.insert(QStringLiteral("last_app"), q.value(6).toString());
+    o.insert(QStringLiteral("last_version"), q.value(7).toString());
+    o.insert(QStringLiteral("status"), q.value(8).toString());
+    o.insert(QStringLiteral("activated_count"), q.value(9).toInt());
+    o.insert(QStringLiteral("created_at"), q.value(10).toString());
     if (out) *out = o;
     return true;
 }
@@ -150,18 +180,19 @@ bool LicenseDb::upsert(const QJsonObject& rec)
     QSqlQuery w(db);
     if (exists) {
         w.prepare(QStringLiteral(
-            "UPDATE licenses SET license_key=?, expiry=?, customer=?, features=?, status=?, "
+            "UPDATE licenses SET license_key=?, expiry=?, customer=?, features=?, product=?, status=?, "
             "activated_count = activated_count + 1 WHERE machine_code=?"));
     } else {
         w.prepare(QStringLiteral(
-            "INSERT INTO licenses (machine_code, license_key, expiry, customer, features, status, activated_count, created_at) "
-            "VALUES (?,?,?,?,?,?,0,?)"));
+            "INSERT INTO licenses (machine_code, license_key, expiry, customer, features, product, status, activated_count, created_at) "
+            "VALUES (?,?,?,?,?,?,?,0,?)"));
         w.addBindValue(machine);
     }
     w.addBindValue(rec.value(QStringLiteral("license_key")).toString());
     w.addBindValue(rec.value(QStringLiteral("expiry")).toString());
     w.addBindValue(rec.value(QStringLiteral("customer")).toString());
     w.addBindValue(rec.value(QStringLiteral("features")).toString());
+    w.addBindValue(rec.value(QStringLiteral("product")).toString());
     w.addBindValue(rec.value(QStringLiteral("status")).toString());
     if (exists) {
         w.addBindValue(machine);
@@ -183,7 +214,8 @@ QJsonArray LicenseDb::listAll() const
 {
     QJsonArray arr;
     QSqlQuery q(QSqlDatabase::database(QStringLiteral("licDb")));
-    if (!q.exec(QStringLiteral("SELECT machine_code, expiry, customer, features, status, activated_count, created_at FROM licenses ORDER BY created_at DESC")))
+    if (!q.exec(QStringLiteral("SELECT machine_code, expiry, customer, features, product, last_app, last_version, "
+                       "status, activated_count, created_at FROM licenses ORDER BY created_at DESC")))
         return arr;
     while (q.next()) {
         QJsonObject o;
@@ -191,9 +223,12 @@ QJsonArray LicenseDb::listAll() const
         o.insert(QStringLiteral("expiry"), q.value(1).toString());
         o.insert(QStringLiteral("customer"), q.value(2).toString());
         o.insert(QStringLiteral("features"), q.value(3).toString());
-        o.insert(QStringLiteral("status"), q.value(4).toString());
-        o.insert(QStringLiteral("activated_count"), q.value(5).toInt());
-        o.insert(QStringLiteral("created_at"), q.value(6).toString());
+        o.insert(QStringLiteral("product"), q.value(4).toString());
+        o.insert(QStringLiteral("last_app"), q.value(5).toString());
+        o.insert(QStringLiteral("last_version"), q.value(6).toString());
+        o.insert(QStringLiteral("status"), q.value(7).toString());
+        o.insert(QStringLiteral("activated_count"), q.value(8).toInt());
+        o.insert(QStringLiteral("created_at"), q.value(9).toString());
         arr.append(o);
     }
     return arr;
@@ -258,11 +293,17 @@ bool LicenseDb::upsertTrial(const QJsonObject& rec)
     return q.exec();
 }
 
-bool LicenseDb::incrementActivated(const QString& machineCode)
+bool LicenseDb::incrementActivated(const QString& machineCode,
+                                  const QString& app, const QString& version)
 {
     QSqlQuery q(QSqlDatabase::database(QStringLiteral("licDb")));
-    q.prepare(QStringLiteral("UPDATE licenses SET activated_count = activated_count + 1 "
-                             "WHERE machine_code = ?"));
+    // 同一条 UPDATE 里把「谁来激活的」一起记掉：这两个字段客户端本来就在发
+    // （AIQDVision / TrainStudio / QDVision 各报各的名），以前直接丢了。
+    // 与 product（签发时说卖的是什么）对不上，就是装错了产品。
+    q.prepare(QStringLiteral("UPDATE licenses SET activated_count = activated_count + 1, "
+                             "last_app = ?, last_version = ? WHERE machine_code = ?"));
+    q.addBindValue(app);
+    q.addBindValue(version);
     q.addBindValue(machineCode);
     return q.exec();
 }
