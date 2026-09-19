@@ -26,3 +26,14 @@ win32 {
 unix:!macx {
     DEFINES += QDV_DB_MYSQL
 }
+
+# --- Windows 资源：exe 图标 + 版本信息 ---
+# 图标由 tools/icons/make_icons.py 生成；qmake 会据此自动合成 .rc 并编进 exe，
+# 装完以后的开始菜单/桌面快捷方式和资源管理器都取这里的图标。
+win32 {
+    RC_ICONS = $$PWD/../resources/icons/license_server.ico
+    VERSION = 1.0.2
+    QMAKE_TARGET_COMPANY = QDVision
+    QMAKE_TARGET_PRODUCT = LicenseServer
+    QMAKE_TARGET_DESCRIPTION = QDVision License Server
+}
